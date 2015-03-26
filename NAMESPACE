@@ -1,0 +1,10 @@
+#exportPattern("^[[:alpha:]]+")
+
+export("samur")
+
+S3method("print", "samur")
+S3method("summary", "samur")
+#S3method("plot", "samur")
+S3method("print", "summary.samur")
+
+importFrom("Matching", "MatchBalance")
