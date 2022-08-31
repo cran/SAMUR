@@ -3,8 +3,21 @@
 # make nbreaks a vector
 # public functions: samur, summary.samur, plot.samur
 # private functions: mdh, predict.mdh, generate.sample.wrapper, generate.sample.core
+# expand factor to include integers with a few levels
 
-samur <- function(formula, data, matched.subset, nsmp = 100, use.quantile = TRUE, breaks = 10) {
+# changes since first release:
+# corrected interpretation of breaks in quantile mode
+# allow breaks to be zero
+# added default value for matched.subset
+# added sampling with replacement option
+
+samur <- function(
+  formula, data
+  , matched.subset = 1:nrow(data)
+  , nsmp = 100
+  , use.quantile = TRUE, breaks = 10
+  , replace = length(unique(matched.subset)) < length(matched.subset)
+  ) {
   mycall <- match.call()
   # data checks:
   # 1) formula (factor response)
@@ -12,9 +25,10 @@ samur <- function(formula, data, matched.subset, nsmp = 100, use.quantile = TRUE
   # 2) matched.subset
   ndat <- nrow(data)
   matched.subset <- as.integer(matched.subset)
-  if (length(matched.subset) > ndat) stop("matched subset cannot be larger than number of rows in data")
+  #if (length(matched.subset) > ndat) stop("matched subset cannot be larger than number of rows in data")
   if (any(matched.subset < 1 | matched.subset > ndat)) stop("out of range values in matched subset")
-  if (length(unique(matched.subset)) < length(matched.subset)) stop("cannot have duplicate values in matched subset")
+  #if (length(unique(matched.subset)) < length(matched.subset)) stop("cannot have duplicate values in matched subset")
+  if (length(unique(matched.subset)) < length(matched.subset) && !replace) stop("replace argument inconsistent with matched subset")
   
   # 3) nsmp: positive integer
   nsmp <- as.integer(nsmp)
@@ -22,11 +36,11 @@ samur <- function(formula, data, matched.subset, nsmp = 100, use.quantile = TRUE
   
   # 4) breaks: positive integer larger than 1 and smaller than ??
   breaks <- as.integer(breaks)
-  if (breaks < 1) stop("breaks must be a positive integer")
+  #if (breaks < 1) stop("breaks must be a positive integer") # TODO: we want to allow no partition as special case
   
   my.mdh <- mdh(formula, data, breaks = breaks, use.quantile = use.quantile)
   myhist <- table(predict(my.mdh, data[matched.subset, ])$cell.assignment)
-  mysmps <- generate.sample.wrapper(my.mdh, myhist, data, nsmp = nsmp)
+  mysmps <- generate.sample.wrapper(my.mdh, myhist, data, nsmp = nsmp, replace)
   
   attr(mysmps, "call") <- mycall
   attr(mysmps, "formula") <- formula
@@ -63,11 +77,11 @@ print.samur <- function(x, ...) {
   print(attr(x, "call"))
 }
 
-generate.sample.wrapper <- function(object, mytgt, newdata, nsmp = 100) { # remove formula
-  sapply(1:nsmp, function(n) generate.sample.core(object, mytgt, newdata))
+generate.sample.wrapper <- function(object, mytgt, newdata, nsmp = 100, replace) { # remove formula
+  sapply(1:nsmp, function(n) generate.sample.core(object, mytgt, newdata, replace))
 }
 
-generate.sample.core <- function(object, mytgt, newdata) {
+generate.sample.core <- function(object, mytgt, newdata, replace) {
   nTreat <- nrow(mytgt)
   treatLevels <- rownames(mytgt)
   nCells <- ncol(mytgt)
@@ -81,9 +95,9 @@ generate.sample.core <- function(object, mytgt, newdata) {
       #sample(which((idx==i) & (data[,treatCol]==treat)), size=tgtList[[m]][[i]][n], replace=F)
       if (mytgt[m,i] > 0) {
         candidate.set <- which((idx==i) & (newdata[,treatCol]==treat))
-        if (length(candidate.set) < mytgt[m,i]) stop("requesting more samples than available data")
+        if (length(candidate.set) < mytgt[m,i] && !replace) stop("requesting more samples than available data")
         if (length(candidate.set) == mytgt[m,i]) return (candidate.set) # combination of this and above line should take care of nasty bug where length(candidate.set)==1
-        return (sample(candidate.set, size=mytgt[m,i], replace=F))
+        return (sample(candidate.set, size=mytgt[m,i], replace = replace))
       } else {
         return (c())
       }
@@ -92,20 +106,26 @@ generate.sample.core <- function(object, mytgt, newdata) {
   return (as.vector(ret))
 }
 
-predict.mdh <- function(object, newdata, ...) {
-  # we need more checks, e.g. that no new treatments appear in newdata, that treatment column type is compatible with training, etc
-  lookup.obs <- function(x, part, i) {
-    if (is.factor(x)) {
-      return (x %in% part[[i]])
-    } else {
-      if (i==1) return (x >= part[i] & x <= part[i+1])
-      return (x > part[i] & x <= part[i+1])
-    }
+#samur.is.factor <- function(x) is.factor(x) || (is.integer(x) && length(unique(x)) <= 10)
+samur.is.factor <- function(x) is.factor(x)
+
+lookup.obs <- function(x, part, i) {
+  #if (is.factor(x)) {
+  if (samur.is.factor(x)) {
+    return (x %in% part[[i]])
+  } else {
+    if (i==1) return (x >= part[i] & x <= part[i+1])
+    return (x > part[i] & x <= part[i+1])
   }
+}
+
+predict.mdh <- function(object, newdata, drop.levels = TRUE, ...) {
+  # we need more checks, e.g. that no new treatments appear in newdata, that treatment column type is compatible with training, etc
   if (missing(newdata)) {
     mf <- object$modelframe
   } else {
-    mf <- model.frame(object$modelterms, droplevels(newdata), xlev = object$xlevels)
+    if (drop.levels) mf <- model.frame(object$modelterms, droplevels(newdata), xlev = object$xlevels)
+    else mf <- model.frame(object$modelterms, newdata, xlev = object$xlevels)
   }
   nobs <- nrow(mf)
   ncells <- prod(object$nparts)
@@ -138,7 +158,9 @@ mdh <- function(formula, data, breaks = 5, use.quantile = TRUE) {
   treatCol <- colnames(my.mf)[attr(my.mt, "response")]
   matchCols <- attr(my.mt, "term.labels")
   
-  isFactor <- sapply(matchCols, function(x) is.factor(my.mf[,x]))
+  #isFactor <- sapply(matchCols, function(x) is.factor(my.mf[,x]))
+  isFactor <- sapply(matchCols, function(x) samur.is.factor(my.mf[,x]))
+  
   
   nMatch <- length(matchCols)
   partition <- list()
@@ -151,12 +173,13 @@ mdh <- function(formula, data, breaks = 5, use.quantile = TRUE) {
       partition[[i]] <- my.levels[[matchCols[i]]]
       nparts[i] <- length(partition[[i]])
     } else { # partitioning a numeric variable
-      breaks <- min(breaks, length(unique(my.mf[,matchCols[i]])))
+      breaks <- min(breaks, length(unique(my.mf[,matchCols[i]]))-2)
       breaks.vec[i] <- breaks
       if (use.quantile) {
-        partition[[i]] <- quantile(my.mf[,matchCols[i]], probs = seq(from=0.0, to=1.0, length.out=breaks+1))
+        partition[[i]] <- quantile(my.mf[,matchCols[i]], probs = seq(from=0.0, to=1.0, length.out=breaks+2))
       } else {
-        partition[[i]] <- hist(my.mf[,matchCols[i]], plot = F, breaks = breaks)$breaks
+        if (breaks > 0) partition[[i]] <- hist(my.mf[,matchCols[i]], plot = F, breaks = breaks)$breaks
+        else partition[[i]] <- range(my.mf[,matchCols[i]])
       }
       nparts[i] <- length(partition[[i]])-1
     }

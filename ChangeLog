@@ -1,0 +1,8 @@
+Changes in version 1.1
+  * Corrected interpretation of breaks in quantile mode
+  * Allow breaks to be zero
+  * Added default value for matched.subset
+  * Added sampling with replacement option
+  * Added a ChangeLog file.
+  * Added import lines to NAMESPACE to handle package build warnings.
+  * Resubmitting to CRAN after an archiving period due to a dependency.

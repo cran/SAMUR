@@ -9,8 +9,13 @@ Stochastic Augmentation of Matched Datasets Using Restriction Methods
 This function generates multiple subsets of the data in which the distribution of covariates is balanced across treatment groups. It works by binning the output of a base matching algorithm into a multidimensional histogram, and drawing - without replacement - from the full data set according to the histogram. This leads to higher data coverage across multiple matched subsets without duplication of cases within each subset.
 }
 \usage{
-samur(formula, data, matched.subset, nsmp = 100
-  , use.quantile = TRUE, breaks = 10)
+samur(
+  formula, data
+  , matched.subset = 1:nrow(data)
+  , nsmp = 100
+  , use.quantile = TRUE, breaks = 10
+  , replace = length(unique(matched.subset)) < length(matched.subset)
+  )
 \method{print}{samur}(x, ...)
 }
 %- maybe also 'usage' for other objects documented here.
@@ -21,6 +26,7 @@ samur(formula, data, matched.subset, nsmp = 100
   \item{nsmp}{Number of stochastically matched subsets to generate.}
   \item{use.quantile}{Should numeric covariates be binned using quantiles (\code{TRUE}) or not.}
   \item{breaks}{number of breaks to use in binning numeric covariates.}
+  \item{replace}{Boolean flag indicating whether or not to perform sampling with replacement.}
   \item{x}{An object of class \code{samur}, typically the output of function \code{samur}.}
   \item{...}{Arguments passed to/from other methods.}
 }

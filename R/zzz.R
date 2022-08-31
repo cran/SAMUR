@@ -3,5 +3,5 @@
                     fields="Version")
   packageStartupMessage(paste(pkgname, RFver))
   packageStartupMessage("Stochastic Augmentation of Matched Data Using Restriction Methods")
-  packageStartupMessage("Heart and Lung Institute, Imperial College London &\nScientific Computing Group, Sentrana Inc.")
+  packageStartupMessage("School of Public Health, Imperial College London &\nStatMan Solution &\nScientific Computing Group, Sentrana Inc.")
 }
